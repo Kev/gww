@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use console::style;
 use dialoguer::{Confirm, FuzzySelect};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -51,6 +52,14 @@ struct WorktreeInfo {
 struct BranchInfo {
     name: String,
     source: BranchSource,
+    summary: BranchSummary,
+}
+
+#[derive(Debug, Clone)]
+struct BranchSummary {
+    timestamp_label: String,
+    author: String,
+    subject: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,6 +249,46 @@ fn git_branch_timestamp(branch: &str) -> Result<i64> {
     Ok(timestamp)
 }
 
+fn branch_summary(branch: &str) -> Result<BranchSummary> {
+    let output = git_output(["log", "-1", "--format=%cI%x1f%an%x1f%s", branch])?;
+    let line = output.lines().next().unwrap_or("");
+    let mut parts = line.split('\x1f');
+    let timestamp_label = parts.next().unwrap_or("").trim().to_string();
+    let author = parts.next().unwrap_or("").trim().to_string();
+    let subject = parts.next().unwrap_or("").trim().to_string();
+    Ok(BranchSummary {
+        timestamp_label,
+        author,
+        subject,
+    })
+}
+
+fn format_branch_item(info: &BranchInfo) -> String {
+    let label = match info.source {
+        BranchSource::Worktree => "[WT]",
+        BranchSource::Local => "[L]",
+        BranchSource::Remote => "[R]",
+    };
+
+    let detail = format!(
+        "{} | {} | {}",
+        info.summary.timestamp_label, info.summary.author, info.summary.subject
+    );
+
+    if is_color_enabled() {
+        let label = style(label).cyan().bold();
+        let name = style(&info.name).bold();
+        let detail = style(detail).dim();
+        format!("{} {} {}", label, name, detail)
+    } else {
+        format!("{label:<4} {} {detail}", info.name)
+    }
+}
+
+fn is_color_enabled() -> bool {
+    env::var("GWW_NO_COLOUR").is_err()
+}
+
 fn list_local_branches() -> Result<Vec<String>> {
     let output = git_output(["for-each-ref", "refs/heads", "--format=%(refname:short)"])?;
     Ok(output
@@ -277,6 +326,7 @@ fn select_branch(
 
     for name in worktree_names {
         candidates.push(BranchInfo {
+            summary: branch_summary(&name)?,
             name,
             source: BranchSource::Worktree,
         });
@@ -285,6 +335,7 @@ fn select_branch(
     for name in local_names {
         if !worktree_set.contains(&name) {
             candidates.push(BranchInfo {
+                summary: branch_summary(&name)?,
                 name,
                 source: BranchSource::Local,
             });
@@ -296,6 +347,7 @@ fn select_branch(
         let has_local = locals.iter().any(|local| local == &local_name);
         if !worktree_set.contains(&local_name) && !has_local {
             candidates.push(BranchInfo {
+                summary: branch_summary(&name)?,
                 name,
                 source: BranchSource::Remote,
             });
@@ -306,14 +358,7 @@ fn select_branch(
         anyhow::bail!("No branches found");
     }
 
-    let items: Vec<String> = candidates
-        .iter()
-        .map(|c| match c.source {
-            BranchSource::Worktree => format!("{:<4} {}", "[WT]", c.name),
-            BranchSource::Local => format!("{:<4} {}", "[L]", c.name),
-            BranchSource::Remote => format!("{:<4} {}", "[R]", c.name),
-        })
-        .collect();
+    let items: Vec<String> = candidates.iter().map(|c| format_branch_item(c)).collect();
 
     let selection = FuzzySelect::new()
         .with_prompt("Select branch")
