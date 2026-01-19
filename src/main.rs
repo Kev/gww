@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use dialoguer::{Confirm, FuzzySelect};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -200,6 +201,45 @@ fn list_worktrees_info() -> Result<Vec<WorktreeInfo>> {
     Ok(worktrees)
 }
 
+fn sort_by_recent<I>(names: I) -> Result<Vec<String>>
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+{
+    let mut unique: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for name in names {
+        let name = name.as_ref().to_string();
+        if seen.insert(name.clone()) {
+            unique.push(name);
+        }
+    }
+
+    let mut map: HashMap<String, i64> = HashMap::new();
+    for name in &unique {
+        let timestamp = git_branch_timestamp(name).unwrap_or(0);
+        map.insert(name.clone(), timestamp);
+    }
+
+    unique.sort_by(|a, b| map[b].cmp(&map[a]).then_with(|| a.cmp(b)));
+    Ok(unique)
+}
+
+fn git_branch_timestamp(branch: &str) -> Result<i64> {
+    let output = git_output([
+        "for-each-ref",
+        "--format=%(committerdate:unix)",
+        &format!("refs/heads/{branch}"),
+        &format!("refs/remotes/{branch}"),
+    ])?;
+    let timestamp = output
+        .lines()
+        .next()
+        .and_then(|line| line.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    Ok(timestamp)
+}
+
 fn list_local_branches() -> Result<Vec<String>> {
     let output = git_output(["for-each-ref", "refs/heads", "--format=%(refname:short)"])?;
     Ok(output
@@ -226,30 +266,41 @@ fn select_branch(
     remotes: &[String],
 ) -> Result<String> {
     let mut candidates: Vec<BranchInfo> = Vec::new();
-    for worktree in worktrees.iter().filter_map(|wt| wt.branch.clone()) {
+    let worktree_set: HashSet<String> = worktrees
+        .iter()
+        .filter_map(|wt| wt.branch.clone())
+        .collect();
+
+    let worktree_names = sort_by_recent(&worktree_set)?;
+    let local_names = sort_by_recent(locals)?;
+    let remote_names = sort_by_recent(remotes)?;
+
+    for name in worktree_names {
         candidates.push(BranchInfo {
-            name: worktree,
+            name,
             source: BranchSource::Worktree,
         });
     }
-    for local in locals {
-        if !candidates.iter().any(|c| c.name == *local) {
+
+    for name in local_names {
+        if !worktree_set.contains(&name) {
             candidates.push(BranchInfo {
-                name: local.clone(),
+                name,
                 source: BranchSource::Local,
             });
         }
     }
-    for remote in remotes {
-        if !candidates.iter().any(|c| c.name == *remote) {
+
+    for name in remote_names {
+        let local_name = strip_remote_prefix(&name);
+        let has_local = locals.iter().any(|local| local == &local_name);
+        if !worktree_set.contains(&local_name) && !has_local {
             candidates.push(BranchInfo {
-                name: remote.clone(),
+                name,
                 source: BranchSource::Remote,
             });
         }
     }
-
-    candidates.sort_by(|a, b| a.name.cmp(&b.name));
 
     if candidates.is_empty() {
         anyhow::bail!("No branches found");
