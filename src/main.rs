@@ -310,7 +310,7 @@ fn placeholder_summary() -> BranchSummary {
 
 fn format_branch_item(info: &BranchInfo) -> String {
     let label = match info.source {
-        BranchSource::Worktree => "WT",
+        BranchSource::Worktree => "T",
         BranchSource::Local => "L",
         BranchSource::Remote => "R",
     };
