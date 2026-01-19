@@ -307,6 +307,7 @@ fn list_remote_branches() -> Result<Vec<String>> {
         .lines()
         .map(|line| line.trim().to_string())
         .filter(|s| !s.is_empty())
+        .filter(|s| s.contains('/'))
         .filter(|s| !s.ends_with("/HEAD"))
         .collect();
     Ok(branches)
