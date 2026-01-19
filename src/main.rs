@@ -300,18 +300,12 @@ fn batch_branch_metadata() -> Result<HashMap<String, BranchMeta>> {
     Ok(map)
 }
 
-fn branch_summary(branch: &str) -> Result<BranchSummary> {
-    let output = git_output(["log", "-1", "--format=%cI%x1f%an%x1f%s", branch])?;
-    let line = output.lines().next().unwrap_or("");
-    let mut parts = line.split('\x1f');
-    let timestamp_label = parts.next().unwrap_or("").trim().to_string();
-    let author = parts.next().unwrap_or("").trim().to_string();
-    let subject = parts.next().unwrap_or("").trim().to_string();
-    Ok(BranchSummary {
-        timestamp_label,
-        author,
-        subject,
-    })
+fn placeholder_summary() -> BranchSummary {
+    BranchSummary {
+        timestamp_label: "unknown time".to_string(),
+        author: "unknown author".to_string(),
+        subject: "unknown subject".to_string(),
+    }
 }
 
 fn format_branch_item(info: &BranchInfo) -> String {
@@ -437,7 +431,8 @@ fn build_branch_candidates(
         let summary = meta
             .get(&name)
             .map(|info| info.summary.clone())
-            .unwrap_or(branch_summary(&name)?);
+            .unwrap_or_else(placeholder_summary);
+
         candidates.push(BranchInfo {
             is_current: current_branch.as_deref() == Some(&name),
             summary,
@@ -451,7 +446,8 @@ fn build_branch_candidates(
             let summary = meta
                 .get(&name)
                 .map(|info| info.summary.clone())
-                .unwrap_or(branch_summary(&name)?);
+                .unwrap_or_else(placeholder_summary);
+
             candidates.push(BranchInfo {
                 is_current: current_branch.as_deref() == Some(&name),
                 summary,
@@ -468,7 +464,7 @@ fn build_branch_candidates(
             let summary = meta
                 .get(&name)
                 .map(|info| info.summary.clone())
-                .unwrap_or(branch_summary(&name)?);
+                .unwrap_or_else(placeholder_summary);
             candidates.push(BranchInfo {
                 is_current: current_branch.as_deref() == Some(&local_name),
                 summary,
