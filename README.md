@@ -1,1 +1,1 @@
-# gww
+# gww - Git Worktree Wrapper
