@@ -273,18 +273,21 @@ fn format_branch_item(info: &BranchInfo) -> String {
     let marker = if info.is_current { "*" } else { " " };
     let tag = format!("[{label}{marker}]");
 
-    let detail = format!(
-        "{} | {} | {}",
-        info.summary.timestamp_label, info.summary.author, info.summary.subject
-    );
+    let subject = format!("\"{}\"", info.summary.subject);
+    let author = format!("[{}]", info.summary.author);
+    let timestamp = format!("({})", info.summary.timestamp_label);
 
     if is_color_enabled() {
         let tag = style(tag).cyan().bold();
-        let name = style(&info.name).bold();
-        let detail = style(detail).dim();
-        format!("{} {} {}", tag, name, detail)
+        let subject = style(subject).magenta();
+        let author = style(author).yellow();
+        let timestamp = style(timestamp).dim();
+        format!("{} {} {} {} {}", tag, info.name, subject, author, timestamp)
     } else {
-        format!("{tag:<4} {} {detail}", info.name)
+        format!(
+            "{tag:<4} {} {} {} {}",
+            info.name, subject, author, timestamp
+        )
     }
 }
 
