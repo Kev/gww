@@ -266,14 +266,14 @@ fn batch_branch_metadata() -> Result<HashMap<String, BranchMeta>> {
         "for-each-ref",
         "refs/heads",
         "refs/remotes",
-        "--format=%(refname:short)%x1f%(committerdate:unix)%x1f%(committerdate:iso8601-strict)%x1f%(authorname)%x1f%(subject)",
+        "--format=%(refname:short)\t%(committerdate:unix)\t%(committerdate:iso8601-strict)\t%(authorname)\t%(subject)",
     ])?;
     let mut map = HashMap::new();
     for line in output.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        let mut parts = line.split('\x1f');
+        let mut parts = line.split('\t');
         let refname = parts.next().unwrap_or("").trim().to_string();
         if refname.is_empty() {
             continue;
