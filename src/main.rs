@@ -661,3 +661,90 @@ fn git_worktree_remove(path: &Path) -> Result<()> {
 fn emit_cd(path: &Path) {
     println!("{CD_PREFIX}{}", path.display());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sort_by_recent_orders_by_timestamp_and_dedups() {
+        let mut meta = HashMap::new();
+        meta.insert(
+            "main".to_string(),
+            BranchMeta {
+                timestamp_unix: 200,
+                summary: placeholder_summary(),
+            },
+        );
+        meta.insert(
+            "feature".to_string(),
+            BranchMeta {
+                timestamp_unix: 100,
+                summary: placeholder_summary(),
+            },
+        );
+        meta.insert(
+            "hotfix".to_string(),
+            BranchMeta {
+                timestamp_unix: 200,
+                summary: placeholder_summary(),
+            },
+        );
+
+        let ordered = sort_by_recent(["feature", "main", "feature", "hotfix"], &meta);
+
+        assert_eq!(ordered, vec!["hotfix", "main", "feature"]);
+    }
+
+    #[test]
+    fn strip_remote_prefix_handles_remote_and_local_names() {
+        assert_eq!(strip_remote_prefix("origin/main"), "main");
+        assert_eq!(strip_remote_prefix("main"), "main");
+    }
+
+    #[test]
+    fn match_remote_branch_prefers_exact_match() {
+        let remotes = vec!["origin/main".to_string(), "upstream/dev".to_string()];
+
+        assert_eq!(
+            match_remote_branch("origin/main", &remotes),
+            Some("origin/main".to_string())
+        );
+        assert_eq!(
+            match_remote_branch("dev", &remotes),
+            Some("upstream/dev".to_string())
+        );
+        assert_eq!(match_remote_branch("missing", &remotes), None);
+    }
+
+    #[test]
+    fn worktree_for_branch_finds_matching_entry() {
+        let worktrees = vec![
+            WorktreeInfo {
+                path: PathBuf::from("/tmp/one"),
+                branch: Some("main".to_string()),
+            },
+            WorktreeInfo {
+                path: PathBuf::from("/tmp/two"),
+                branch: Some("feature".to_string()),
+            },
+        ];
+
+        let found = worktree_for_branch(&worktrees, "feature").expect("missing worktree");
+
+        assert_eq!(found.path, PathBuf::from("/tmp/two"));
+    }
+
+    #[test]
+    fn repo_name_from_url_strips_git_suffix() {
+        assert_eq!(
+            repo_name_from_url("https://github.com/org/project.git"),
+            Some("project".to_string())
+        );
+        assert_eq!(
+            repo_name_from_url("ssh://git@github.com/org/repo/"),
+            Some("repo".to_string())
+        );
+    }
+
+}
