@@ -8,6 +8,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 const CD_PREFIX: &str = "GWW_CD:";
 
@@ -40,6 +41,8 @@ enum Commands {
     },
     /// Output shell function for auto-cd
     Autocd,
+    #[command(hide = true)]
+    Timechooser,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +91,7 @@ fn main() -> Result<()> {
         Commands::List => list_worktrees(),
         Commands::Remove { branch } => remove_worktree(branch),
         Commands::Autocd => autocd(),
+        Commands::Timechooser => timechooser(),
     }
 }
 
@@ -138,6 +142,23 @@ fn checkout(branch: Option<String>, create: bool) -> Result<()> {
 fn list_worktrees() -> Result<()> {
     let output = git_output(["worktree", "list"])?;
     print!("{}", output);
+    Ok(())
+}
+
+fn timechooser() -> Result<()> {
+    ensure_git_repo()?;
+    let start = Instant::now();
+    let worktrees = list_worktrees_info()?;
+    let local_branches = list_local_branches()?;
+    let remote_branches = list_remote_branches()?;
+    let candidates = build_branch_candidates(&worktrees, &local_branches, &remote_branches)?;
+    let elapsed = start.elapsed();
+
+    println!(
+        "Built {} branch entries in {:.2?}",
+        candidates.len(),
+        elapsed
+    );
     Ok(())
 }
 
@@ -340,6 +361,32 @@ fn select_branch(
     locals: &[String],
     remotes: &[String],
 ) -> Result<String> {
+    let candidates = build_branch_candidates(worktrees, locals, remotes)?;
+
+    if candidates.is_empty() {
+        anyhow::bail!("No branches found");
+    }
+
+    let items: Vec<String> = candidates.iter().map(|c| format_branch_item(c)).collect();
+
+    let selection = FuzzySelect::new()
+        .with_prompt("Select branch")
+        .items(&items)
+        .default(0)
+        .interact_opt()?;
+
+    let Some(selection) = selection else {
+        anyhow::bail!("Selection cancelled");
+    };
+
+    Ok(candidates[selection].name.clone())
+}
+
+fn build_branch_candidates(
+    worktrees: &[WorktreeInfo],
+    locals: &[String],
+    remotes: &[String],
+) -> Result<Vec<BranchInfo>> {
     let mut candidates: Vec<BranchInfo> = Vec::new();
     let worktree_set: HashSet<String> = worktrees
         .iter()
@@ -390,23 +437,7 @@ fn select_branch(
         }
     }
 
-    if candidates.is_empty() {
-        anyhow::bail!("No branches found");
-    }
-
-    let items: Vec<String> = candidates.iter().map(|c| format_branch_item(c)).collect();
-
-    let selection = FuzzySelect::new()
-        .with_prompt("Select branch")
-        .items(&items)
-        .default(0)
-        .interact_opt()?;
-
-    let Some(selection) = selection else {
-        anyhow::bail!("Selection cancelled");
-    };
-
-    Ok(candidates[selection].name.clone())
+    Ok(candidates)
 }
 
 fn select_worktree_branch(worktrees: &[WorktreeInfo]) -> Result<String> {
