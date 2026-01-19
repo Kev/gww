@@ -53,6 +53,7 @@ struct BranchInfo {
     name: String,
     source: BranchSource,
     summary: BranchSummary,
+    is_current: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -265,10 +266,12 @@ fn branch_summary(branch: &str) -> Result<BranchSummary> {
 
 fn format_branch_item(info: &BranchInfo) -> String {
     let label = match info.source {
-        BranchSource::Worktree => "[WT]",
-        BranchSource::Local => "[L]",
-        BranchSource::Remote => "[R]",
+        BranchSource::Worktree => "WT",
+        BranchSource::Local => "L",
+        BranchSource::Remote => "R",
     };
+    let marker = if info.is_current { "*" } else { " " };
+    let tag = format!("[{label}{marker}]");
 
     let detail = format!(
         "{} | {} | {}",
@@ -276,12 +279,12 @@ fn format_branch_item(info: &BranchInfo) -> String {
     );
 
     if is_color_enabled() {
-        let label = style(label).cyan().bold();
+        let tag = style(tag).cyan().bold();
         let name = style(&info.name).bold();
         let detail = style(detail).dim();
-        format!("{} {} {}", label, name, detail)
+        format!("{} {} {}", tag, name, detail)
     } else {
-        format!("{label:<4} {} {detail}", info.name)
+        format!("{tag:<4} {} {detail}", info.name)
     }
 }
 
@@ -309,6 +312,16 @@ fn list_remote_branches() -> Result<Vec<String>> {
     Ok(branches)
 }
 
+fn current_branch() -> Result<Option<String>> {
+    let output = git_output(["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let name = output.lines().next().unwrap_or("").trim();
+    if name.is_empty() || name == "HEAD" {
+        Ok(None)
+    } else {
+        Ok(Some(name.to_string()))
+    }
+}
+
 fn select_branch(
     worktrees: &[WorktreeInfo],
     locals: &[String],
@@ -320,12 +333,14 @@ fn select_branch(
         .filter_map(|wt| wt.branch.clone())
         .collect();
 
+    let current_branch = current_branch()?;
     let worktree_names = sort_by_recent(&worktree_set)?;
     let local_names = sort_by_recent(locals)?;
     let remote_names = sort_by_recent(remotes)?;
 
     for name in worktree_names {
         candidates.push(BranchInfo {
+            is_current: current_branch.as_deref() == Some(&name),
             summary: branch_summary(&name)?,
             name,
             source: BranchSource::Worktree,
@@ -335,6 +350,7 @@ fn select_branch(
     for name in local_names {
         if !worktree_set.contains(&name) {
             candidates.push(BranchInfo {
+                is_current: current_branch.as_deref() == Some(&name),
                 summary: branch_summary(&name)?,
                 name,
                 source: BranchSource::Local,
@@ -347,6 +363,7 @@ fn select_branch(
         let has_local = locals.iter().any(|local| local == &local_name);
         if !worktree_set.contains(&local_name) && !has_local {
             candidates.push(BranchInfo {
+                is_current: current_branch.as_deref() == Some(&local_name),
                 summary: branch_summary(&name)?,
                 name,
                 source: BranchSource::Remote,
