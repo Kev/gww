@@ -6,5 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
-console = "0.15"
-dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+console = "0.16"
+dialoguer = { version = "0.12", features = ["fuzzy-select"] }
