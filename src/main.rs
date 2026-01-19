@@ -66,6 +66,12 @@ struct BranchSummary {
     subject: String,
 }
 
+#[derive(Debug, Clone)]
+struct BranchMeta {
+    timestamp_unix: i64,
+    summary: BranchSummary,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BranchSource {
     Local,
@@ -233,7 +239,7 @@ fn list_worktrees_info() -> Result<Vec<WorktreeInfo>> {
     Ok(worktrees)
 }
 
-fn sort_by_recent<I>(names: I) -> Result<Vec<String>>
+fn sort_by_recent<I>(names: I, meta: &HashMap<String, BranchMeta>) -> Vec<String>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
@@ -247,29 +253,51 @@ where
         }
     }
 
-    let mut map: HashMap<String, i64> = HashMap::new();
-    for name in &unique {
-        let timestamp = git_branch_timestamp(name).unwrap_or(0);
-        map.insert(name.clone(), timestamp);
-    }
-
-    unique.sort_by(|a, b| map[b].cmp(&map[a]).then_with(|| a.cmp(b)));
-    Ok(unique)
+    unique.sort_by(|a, b| {
+        let a_ts = meta.get(a).map(|info| info.timestamp_unix).unwrap_or(0);
+        let b_ts = meta.get(b).map(|info| info.timestamp_unix).unwrap_or(0);
+        b_ts.cmp(&a_ts).then_with(|| a.cmp(b))
+    });
+    unique
 }
 
-fn git_branch_timestamp(branch: &str) -> Result<i64> {
+fn batch_branch_metadata() -> Result<HashMap<String, BranchMeta>> {
     let output = git_output([
         "for-each-ref",
-        "--format=%(committerdate:unix)",
-        &format!("refs/heads/{branch}"),
-        &format!("refs/remotes/{branch}"),
+        "refs/heads",
+        "refs/remotes",
+        "--format=%(refname:short)%x1f%(committerdate:unix)%x1f%(committerdate:iso8601-strict)%x1f%(authorname)%x1f%(subject)",
     ])?;
-    let timestamp = output
-        .lines()
-        .next()
-        .and_then(|line| line.trim().parse::<i64>().ok())
-        .unwrap_or(0);
-    Ok(timestamp)
+    let mut map = HashMap::new();
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\x1f');
+        let refname = parts.next().unwrap_or("").trim().to_string();
+        if refname.is_empty() {
+            continue;
+        }
+        let timestamp_unix = parts
+            .next()
+            .and_then(|value| value.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let timestamp_label = parts.next().unwrap_or("").trim().to_string();
+        let author = parts.next().unwrap_or("").trim().to_string();
+        let subject = parts.next().unwrap_or("").trim().to_string();
+        map.insert(
+            refname,
+            BranchMeta {
+                timestamp_unix,
+                summary: BranchSummary {
+                    timestamp_label,
+                    author,
+                    subject,
+                },
+            },
+        );
+    }
+    Ok(map)
 }
 
 fn branch_summary(branch: &str) -> Result<BranchSummary> {
@@ -392,22 +420,27 @@ fn build_branch_candidates(
         .iter()
         .filter_map(|wt| wt.branch.clone())
         .collect();
+    let meta = batch_branch_metadata()?;
 
     let current_branch = current_branch()?;
-    let mut worktree_names = sort_by_recent(&worktree_set)?;
+    let mut worktree_names = sort_by_recent(&worktree_set, &meta);
     if let Some(current) = current_branch.as_ref() {
         if let Some(pos) = worktree_names.iter().position(|name| name == current) {
             let current_name = worktree_names.remove(pos);
             worktree_names.insert(0, current_name);
         }
     }
-    let local_names = sort_by_recent(locals)?;
-    let remote_names = sort_by_recent(remotes)?;
+    let local_names = sort_by_recent(locals, &meta);
+    let remote_names = sort_by_recent(remotes, &meta);
 
     for name in worktree_names {
+        let summary = meta
+            .get(&name)
+            .map(|info| info.summary.clone())
+            .unwrap_or(branch_summary(&name)?);
         candidates.push(BranchInfo {
             is_current: current_branch.as_deref() == Some(&name),
-            summary: branch_summary(&name)?,
+            summary,
             name,
             source: BranchSource::Worktree,
         });
@@ -415,9 +448,13 @@ fn build_branch_candidates(
 
     for name in local_names {
         if !worktree_set.contains(&name) {
+            let summary = meta
+                .get(&name)
+                .map(|info| info.summary.clone())
+                .unwrap_or(branch_summary(&name)?);
             candidates.push(BranchInfo {
                 is_current: current_branch.as_deref() == Some(&name),
-                summary: branch_summary(&name)?,
+                summary,
                 name,
                 source: BranchSource::Local,
             });
@@ -428,9 +465,13 @@ fn build_branch_candidates(
         let local_name = strip_remote_prefix(&name);
         let has_local = locals.iter().any(|local| local == &local_name);
         if !worktree_set.contains(&local_name) && !has_local {
+            let summary = meta
+                .get(&name)
+                .map(|info| info.summary.clone())
+                .unwrap_or(branch_summary(&name)?);
             candidates.push(BranchInfo {
                 is_current: current_branch.as_deref() == Some(&local_name),
-                summary: branch_summary(&name)?,
+                summary,
                 name,
                 source: BranchSource::Remote,
             });
