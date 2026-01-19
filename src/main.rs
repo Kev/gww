@@ -71,6 +71,7 @@ enum BranchSource {
 }
 
 fn main() -> Result<()> {
+    configure_colors();
     let cli = Cli::parse();
     let command = match cli.command {
         Some(command) => command,
@@ -293,6 +294,14 @@ fn format_branch_item(info: &BranchInfo) -> String {
 
 fn is_color_enabled() -> bool {
     env::var("GWW_NO_COLOUR").is_err()
+}
+
+fn configure_colors() {
+    if is_color_enabled() {
+        console::set_colors_enabled(true);
+    } else {
+        console::set_colors_enabled(false);
+    }
 }
 
 fn list_local_branches() -> Result<Vec<String>> {
