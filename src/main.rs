@@ -79,6 +79,7 @@ enum BranchSource {
     Worktree,
 }
 
+/// Entry point for the gww CLI.
 fn main() -> Result<()> {
     configure_colors();
     let cli = Cli::parse();
@@ -101,6 +102,7 @@ fn main() -> Result<()> {
     }
 }
 
+/// Checkout or create a worktree for the selected branch.
 fn checkout(branch: Option<String>, create: bool) -> Result<()> {
     ensure_git_repo()?;
     let worktrees = list_worktrees_info()?;
@@ -145,12 +147,14 @@ fn checkout(branch: Option<String>, create: bool) -> Result<()> {
     Ok(())
 }
 
+/// Prints the raw git worktree list.
 fn list_worktrees() -> Result<()> {
     let output = git_output(["worktree", "list"])?;
     print!("{}", output);
     Ok(())
 }
 
+/// Measures branch candidate building time.
 fn timechooser() -> Result<()> {
     ensure_git_repo()?;
     let start = Instant::now();
@@ -168,6 +172,7 @@ fn timechooser() -> Result<()> {
     Ok(())
 }
 
+/// Removes the selected worktree from disk.
 fn remove_worktree(branch: Option<String>) -> Result<()> {
     ensure_git_repo()?;
     let worktrees = list_worktrees_info()?;
@@ -181,6 +186,7 @@ fn remove_worktree(branch: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Prints shell functions that auto-cd into worktrees.
 fn autocd() -> Result<()> {
     let script = format!(
         "gww() {{\n    local output\n    output=$(command gww \"$@\")\n    local exit_code=$?\n    echo \"$output\"\n    if [ $exit_code -eq 0 ]; then\n        local cd_path\n        cd_path=$(echo \"$output\" | grep \"^{prefix}\" | cut -d: -f2-)\n        [ -n \"$cd_path\" ] && cd \"$cd_path\"\n    fi\n    return $exit_code\n}}\n\n_gww_cd() {{\n    local output\n    output=$(command gww checkout \"$@\")\n    local exit_code=$?\n    if [ $exit_code -ne 0 ]; then\n        echo \"$output\"\n        return $exit_code\n    fi\n    local cd_path\n    cd_path=$(echo \"$output\" | grep \"^{prefix}\" | cut -d: -f2-)\n    [ -n \"$cd_path\" ] && cd \"$cd_path\"\n}}\n",
@@ -191,11 +197,13 @@ fn autocd() -> Result<()> {
     Ok(())
 }
 
+/// Ensures the current directory is inside a git repository.
 fn ensure_git_repo() -> Result<()> {
     git_output(["rev-parse", "--show-toplevel"]).context("Not a git repository")?;
     Ok(())
 }
 
+/// Runs a git command and returns stdout on success.
 fn git_output<I, S>(args: I) -> Result<String>
 where
     I: IntoIterator<Item = S>,
@@ -209,6 +217,7 @@ where
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Loads detailed worktree entries from git.
 fn list_worktrees_info() -> Result<Vec<WorktreeInfo>> {
     let output = git_output(["worktree", "list", "--porcelain"])?;
     let mut worktrees = Vec::new();
@@ -239,6 +248,7 @@ fn list_worktrees_info() -> Result<Vec<WorktreeInfo>> {
     Ok(worktrees)
 }
 
+/// Orders unique branch names by most recent commit time.
 fn sort_by_recent<I>(names: I, meta: &HashMap<String, BranchMeta>) -> Vec<String>
 where
     I: IntoIterator,
@@ -261,6 +271,7 @@ where
     unique
 }
 
+/// Collects commit metadata for local and remote branches.
 fn batch_branch_metadata() -> Result<HashMap<String, BranchMeta>> {
     let output = git_output([
         "for-each-ref",
@@ -300,6 +311,7 @@ fn batch_branch_metadata() -> Result<HashMap<String, BranchMeta>> {
     Ok(map)
 }
 
+/// Builds a fallback branch summary when metadata is missing.
 fn placeholder_summary() -> BranchSummary {
     BranchSummary {
         timestamp_label: "unknown time".to_string(),
@@ -308,6 +320,7 @@ fn placeholder_summary() -> BranchSummary {
     }
 }
 
+/// Formats a branch entry for display in the selector.
 fn format_branch_item(info: &BranchInfo) -> String {
     let label = match info.source {
         BranchSource::Worktree => "T",
@@ -335,10 +348,12 @@ fn format_branch_item(info: &BranchInfo) -> String {
     }
 }
 
+/// Returns true when ANSI color output is enabled.
 fn is_color_enabled() -> bool {
     env::var("GWW_NO_COLOUR").is_err()
 }
 
+/// Applies the configured color settings to console output.
 fn configure_colors() {
     if is_color_enabled() {
         console::set_colors_enabled(true);
@@ -347,6 +362,7 @@ fn configure_colors() {
     }
 }
 
+/// Lists local branch names.
 fn list_local_branches() -> Result<Vec<String>> {
     let output = git_output(["for-each-ref", "refs/heads", "--format=%(refname:short)"])?;
     Ok(output
@@ -356,6 +372,7 @@ fn list_local_branches() -> Result<Vec<String>> {
         .collect())
 }
 
+/// Lists remote branch names, excluding HEAD entries.
 fn list_remote_branches() -> Result<Vec<String>> {
     let output = git_output(["for-each-ref", "refs/remotes", "--format=%(refname:short)"])?;
     let branches = output
@@ -368,6 +385,7 @@ fn list_remote_branches() -> Result<Vec<String>> {
     Ok(branches)
 }
 
+/// Returns the currently checked-out branch name, if any.
 fn current_branch() -> Result<Option<String>> {
     let output = git_output(["rev-parse", "--abbrev-ref", "HEAD"])?;
     let name = output.lines().next().unwrap_or("").trim();
@@ -378,6 +396,7 @@ fn current_branch() -> Result<Option<String>> {
     }
 }
 
+/// Prompts for a branch name across worktrees, local, and remote.
 fn select_branch(
     worktrees: &[WorktreeInfo],
     locals: &[String],
@@ -404,6 +423,7 @@ fn select_branch(
     Ok(candidates[selection].name.clone())
 }
 
+/// Builds branch candidates with metadata for selection.
 fn build_branch_candidates(
     worktrees: &[WorktreeInfo],
     locals: &[String],
@@ -477,6 +497,7 @@ fn build_branch_candidates(
     Ok(candidates)
 }
 
+/// Prompts for a branch among existing worktrees.
 fn select_worktree_branch(worktrees: &[WorktreeInfo]) -> Result<String> {
     let mut branches: Vec<String> = worktrees
         .iter()
@@ -502,6 +523,7 @@ fn select_worktree_branch(worktrees: &[WorktreeInfo]) -> Result<String> {
     Ok(branches[selection].clone())
 }
 
+/// Finds the worktree entry that matches a branch.
 fn worktree_for_branch<'a>(
     worktrees: &'a [WorktreeInfo],
     branch: &str,
@@ -511,6 +533,7 @@ fn worktree_for_branch<'a>(
         .find(|wt| wt.branch.as_deref() == Some(branch))
 }
 
+/// Finds a remote branch that matches the provided name.
 fn match_remote_branch(branch: &str, remotes: &[String]) -> Option<String> {
     if remotes.iter().any(|b| b == branch) {
         return Some(branch.to_string());
@@ -525,6 +548,7 @@ fn match_remote_branch(branch: &str, remotes: &[String]) -> Option<String> {
     None
 }
 
+/// Strips the remote prefix from a branch name.
 fn strip_remote_prefix(branch: &str) -> String {
     branch
         .split_once('/')
@@ -532,6 +556,7 @@ fn strip_remote_prefix(branch: &str) -> String {
         .unwrap_or_else(|| branch.to_string())
 }
 
+/// Ensures a branch exists or prompts for creation.
 fn ensure_branch_or_prompt(branch: &str, create: bool, remote: Option<&str>) -> Result<()> {
     if branch_exists(branch) {
         return Ok(());
@@ -559,6 +584,7 @@ fn ensure_branch_or_prompt(branch: &str, create: bool, remote: Option<&str>) -> 
     }
 }
 
+/// Returns true if the remote branch reference exists.
 fn remote_branch_exists(branch: &str) -> bool {
     Command::new("git")
         .args([
@@ -572,6 +598,7 @@ fn remote_branch_exists(branch: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Returns true if the local branch reference exists.
 fn branch_exists(branch: &str) -> bool {
     Command::new("git")
         .args([
@@ -585,12 +612,14 @@ fn branch_exists(branch: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Builds the target worktree path for a branch.
 fn worktree_path_for_branch(branch: &str) -> Result<PathBuf> {
     let root = worktree_root()?;
     let repo = repo_name_stem()?;
     Ok(root.join(repo).join(branch))
 }
 
+/// Resolves the configured root for worktrees.
 fn worktree_root() -> Result<PathBuf> {
     if let Ok(root) = env::var("WORKTREE_ROOT") {
         return Ok(PathBuf::from(root));
@@ -599,6 +628,7 @@ fn worktree_root() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join("devel").join("worktrees"))
 }
 
+/// Resolves the repository name for worktree paths.
 fn repo_name_stem() -> Result<String> {
     if let Ok(url) = git_output(["remote", "get-url", "origin"])
         && let Some(stem) = repo_name_from_url(url.trim())
@@ -613,12 +643,14 @@ fn repo_name_stem() -> Result<String> {
         .context("Unable to determine repository name")
 }
 
+/// Extracts the repository name from a git remote URL.
 fn repo_name_from_url(url: &str) -> Option<String> {
     let cleaned = url.trim_end_matches('/');
     let name = cleaned.rsplit('/').next()?;
     Some(name.trim_end_matches(".git").to_string())
 }
 
+/// Runs `git worktree add` with optional branch creation.
 fn git_worktree_add(path: &Path, branch: Option<&str>, remote: Option<&str>) -> Result<()> {
     let mut cmd = Command::new("git");
     cmd.arg("worktree").arg("add").arg(path);
@@ -646,6 +678,7 @@ fn git_worktree_add(path: &Path, branch: Option<&str>, remote: Option<&str>) -> 
     Ok(())
 }
 
+/// Runs `git worktree remove` for the selected path.
 fn git_worktree_remove(path: &Path) -> Result<()> {
     let status = Command::new("git")
         .args(["worktree", "remove"])
@@ -658,6 +691,7 @@ fn git_worktree_remove(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Emits a tagged path for shell auto-cd scripts.
 fn emit_cd(path: &Path) {
     println!("{CD_PREFIX}{}", path.display());
 }
@@ -666,6 +700,7 @@ fn emit_cd(path: &Path) {
 mod tests {
     use super::*;
 
+    /// Verifies the sort order and de-duplication behavior.
     #[test]
     fn sort_by_recent_orders_by_timestamp_and_dedups() {
         let mut meta = HashMap::new();
@@ -696,12 +731,14 @@ mod tests {
         assert_eq!(ordered, vec!["hotfix", "main", "feature"]);
     }
 
+    /// Ensures remote prefixes are stripped correctly.
     #[test]
     fn strip_remote_prefix_handles_remote_and_local_names() {
         assert_eq!(strip_remote_prefix("origin/main"), "main");
         assert_eq!(strip_remote_prefix("main"), "main");
     }
 
+    /// Checks matching behavior for remote branches.
     #[test]
     fn match_remote_branch_prefers_exact_match() {
         let remotes = vec!["origin/main".to_string(), "upstream/dev".to_string()];
@@ -717,6 +754,7 @@ mod tests {
         assert_eq!(match_remote_branch("missing", &remotes), None);
     }
 
+    /// Confirms worktree lookup returns the expected entry.
     #[test]
     fn worktree_for_branch_finds_matching_entry() {
         let worktrees = vec![
@@ -735,6 +773,7 @@ mod tests {
         assert_eq!(found.path, PathBuf::from("/tmp/two"));
     }
 
+    /// Verifies repository names are extracted cleanly.
     #[test]
     fn repo_name_from_url_strips_git_suffix() {
         assert_eq!(
