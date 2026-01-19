@@ -61,10 +61,17 @@ enum BranchSource {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    match cli.command.unwrap_or(Commands::Checkout {
-        branch: None,
-        create: false,
-    }) {
+    let command = match cli.command {
+        Some(command) => command,
+        None => {
+            eprintln!(
+                "No command provided; defaulting to `checkout`. Use `gww --help` for options."
+            );
+            return checkout(None, false);
+        }
+    };
+
+    match command {
         Commands::Checkout { branch, create } => checkout(branch, create),
         Commands::List => list_worktrees(),
         Commands::Remove { branch } => remove_worktree(branch),
