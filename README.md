@@ -37,3 +37,7 @@ gww list
 
 gww remove
 ```
+
+## AI Note
+
+This project is an experiment in vibe coding, although it seems useful in its own right.
