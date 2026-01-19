@@ -334,7 +334,13 @@ fn select_branch(
         .collect();
 
     let current_branch = current_branch()?;
-    let worktree_names = sort_by_recent(&worktree_set)?;
+    let mut worktree_names = sort_by_recent(&worktree_set)?;
+    if let Some(current) = current_branch.as_ref() {
+        if let Some(pos) = worktree_names.iter().position(|name| name == current) {
+            let current_name = worktree_names.remove(pos);
+            worktree_names.insert(0, current_name);
+        }
+    }
     let local_names = sort_by_recent(locals)?;
     let remote_names = sort_by_recent(remotes)?;
 
