@@ -389,7 +389,7 @@ fn select_branch(
         anyhow::bail!("No branches found");
     }
 
-    let items: Vec<String> = candidates.iter().map(|c| format_branch_item(c)).collect();
+    let items: Vec<String> = candidates.iter().map(format_branch_item).collect();
 
     let selection = FuzzySelect::new()
         .with_prompt("Select branch")
@@ -418,11 +418,11 @@ fn build_branch_candidates(
 
     let current_branch = current_branch()?;
     let mut worktree_names = sort_by_recent(&worktree_set, &meta);
-    if let Some(current) = current_branch.as_ref() {
-        if let Some(pos) = worktree_names.iter().position(|name| name == current) {
-            let current_name = worktree_names.remove(pos);
-            worktree_names.insert(0, current_name);
-        }
+    if let Some(current) = current_branch.as_ref()
+        && let Some(pos) = worktree_names.iter().position(|name| name == current)
+    {
+        let current_name = worktree_names.remove(pos);
+        worktree_names.insert(0, current_name);
     }
     let local_names = sort_by_recent(locals, &meta);
     let remote_names = sort_by_recent(remotes, &meta);
@@ -537,10 +537,10 @@ fn ensure_branch_or_prompt(branch: &str, create: bool, remote: Option<&str>) -> 
         return Ok(());
     }
 
-    if let Some(remote_ref) = remote {
-        if remote_branch_exists(remote_ref) {
-            return Ok(());
-        }
+    if let Some(remote_ref) = remote
+        && remote_branch_exists(remote_ref)
+    {
+        return Ok(());
     }
 
     if create {
@@ -600,10 +600,10 @@ fn worktree_root() -> Result<PathBuf> {
 }
 
 fn repo_name_stem() -> Result<String> {
-    if let Ok(url) = git_output(["remote", "get-url", "origin"]) {
-        if let Some(stem) = repo_name_from_url(url.trim()) {
-            return Ok(stem);
-        }
+    if let Ok(url) = git_output(["remote", "get-url", "origin"])
+        && let Some(stem) = repo_name_from_url(url.trim())
+    {
+        return Ok(stem);
     }
     let root = git_output(["rev-parse", "--show-toplevel"])?;
     let path = Path::new(root.trim());
@@ -746,5 +746,4 @@ mod tests {
             Some("repo".to_string())
         );
     }
-
 }
