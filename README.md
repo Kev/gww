@@ -23,6 +23,7 @@ cargo build
 ## Usage
 
 - `gww checkout|co [branch]` - Checkout a branch into a worktree (fuzzy select when omitted).
+- `gww <branch>` - Shortcut for `gww checkout <branch>`.
 - `gww checkout -b <branch>` - Create a branch if it does not exist.
 - `gww list|ls` - Show worktrees (raw `git worktree list` output).
 - `gww remove|rm [branch]` - Remove a worktree (fuzzy select when omitted).

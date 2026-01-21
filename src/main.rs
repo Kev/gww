@@ -43,6 +43,8 @@ enum Commands {
     Autocd,
     #[command(hide = true)]
     Timechooser,
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +101,22 @@ fn main() -> Result<()> {
         Commands::Remove { branch } => remove_worktree(branch),
         Commands::Autocd => autocd(),
         Commands::Timechooser => timechooser(),
+        Commands::External(args) => {
+            if let Some(branch) = branch_from_external_args(&args) {
+                checkout(Some(branch), false)
+            } else {
+                anyhow::bail!("Unknown command: {}", args.join(" "))
+            }
+        }
+    }
+}
+
+/// Returns a branch name when provided as a single unrecognized argument.
+fn branch_from_external_args(args: &[String]) -> Option<String> {
+    if args.len() == 1 && !args[0].starts_with('-') {
+        Some(args[0].clone())
+    } else {
+        None
     }
 }
 
@@ -736,6 +754,24 @@ mod tests {
     fn strip_remote_prefix_handles_remote_and_local_names() {
         assert_eq!(strip_remote_prefix("origin/main"), "main");
         assert_eq!(strip_remote_prefix("main"), "main");
+    }
+
+    /// Accepts a single external argument as a branch name.
+    #[test]
+    fn branch_from_external_args_accepts_branch() {
+        let args = vec!["main".to_string()];
+
+        assert_eq!(branch_from_external_args(&args), Some("main".to_string()));
+    }
+
+    /// Rejects flags or extra arguments as checkout branch names.
+    #[test]
+    fn branch_from_external_args_rejects_flags_and_extra_args() {
+        let flags = vec!["-h".to_string()];
+        let extra = vec!["main".to_string(), "extra".to_string()];
+
+        assert_eq!(branch_from_external_args(&flags), None);
+        assert_eq!(branch_from_external_args(&extra), None);
     }
 
     /// Checks matching behavior for remote branches.
