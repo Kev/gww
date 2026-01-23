@@ -696,6 +696,28 @@ fn git_worktree_add(path: &Path, branch: Option<&str>, remote: Option<&str>) -> 
     if !status.success() {
         anyhow::bail!("git worktree add failed");
     }
+    if should_init_submodules_on_checkout() {
+        init_submodules(path)?;
+    }
+    Ok(())
+}
+
+/// Returns true when submodules should be initialized after checkout.
+fn should_init_submodules_on_checkout() -> bool {
+    env::var_os("GWW_SUBMODULE_ON_CHECKOUT").is_some()
+}
+
+/// Initializes submodules recursively for a worktree path.
+fn init_submodules(path: &Path) -> Result<()> {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(["submodule", "update", "--init", "--recursive"])
+        .status()
+        .context("Failed to run git submodule update")?;
+    if !status.success() {
+        anyhow::bail!("git submodule update failed");
+    }
     Ok(())
 }
 

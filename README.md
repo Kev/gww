@@ -36,6 +36,7 @@ Worktrees are stored under `$WORKTREE_ROOT/<repo>/<branch>`.
 
 - `WORKTREE_ROOT` - Base directory for worktrees.
 - `GWW_NO_COLOUR` - Disable ANSI colors when set.
+- `GWW_SUBMODULE_ON_CHECKOUT` - Initialize submodules recursively when set.
 
 ## Auto-cd
 
