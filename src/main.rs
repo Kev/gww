@@ -38,6 +38,9 @@ enum Commands {
     Remove {
         /// Branch name to remove
         branch: Option<String>,
+        /// Force removal without prompting
+        #[arg(short = 'f', long = "force")]
+        force: bool,
     },
     /// Output shell function for auto-cd
     Autocd,
@@ -98,7 +101,7 @@ fn main() -> Result<()> {
     match command {
         Commands::Checkout { branch, create } => checkout(branch, create),
         Commands::List => list_worktrees(),
-        Commands::Remove { branch } => remove_worktree(branch),
+        Commands::Remove { branch, force } => remove_worktree(branch, force),
         Commands::Autocd => autocd(),
         Commands::Timechooser => timechooser(),
         Commands::External(args) => {
@@ -191,7 +194,7 @@ fn timechooser() -> Result<()> {
 }
 
 /// Removes the selected worktree from disk.
-fn remove_worktree(branch: Option<String>) -> Result<()> {
+fn remove_worktree(branch: Option<String>, force: bool) -> Result<()> {
     ensure_git_repo()?;
     let worktrees = list_worktrees_info()?;
     let selected_branch = match branch {
@@ -200,7 +203,7 @@ fn remove_worktree(branch: Option<String>) -> Result<()> {
     };
     let worktree = worktree_for_branch(&worktrees, &selected_branch)
         .with_context(|| format!("No worktree found for branch '{selected_branch}'"))?;
-    git_worktree_remove(&worktree.path)?;
+    git_worktree_remove(&worktree.path, force)?;
     Ok(())
 }
 
@@ -697,12 +700,51 @@ fn git_worktree_add(path: &Path, branch: Option<&str>, remote: Option<&str>) -> 
 }
 
 /// Runs `git worktree remove` for the selected path.
-fn git_worktree_remove(path: &Path) -> Result<()> {
-    let status = Command::new("git")
+fn git_worktree_remove(path: &Path, force: bool) -> Result<()> {
+    if force {
+        let status = Command::new("git")
+            .args(["worktree", "remove", "--force"])
+            .arg(path)
+            .status()
+            .context("Failed to run git worktree remove --force")?;
+        if !status.success() {
+            anyhow::bail!("git worktree remove failed");
+        }
+        return Ok(());
+    }
+
+    let output = Command::new("git")
         .args(["worktree", "remove"])
         .arg(path)
-        .status()
+        .output()
         .context("Failed to run git worktree remove")?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let trimmed = stderr.trim();
+    let message = if trimmed.is_empty() {
+        "git worktree remove failed"
+    } else {
+        trimmed
+    };
+
+    let should_remove = Confirm::new()
+        .with_prompt(format!(
+            "{message}. Force remove anyway? This will delete the worktree from disk."
+        ))
+        .default(false)
+        .interact()?;
+    if !should_remove {
+        anyhow::bail!("Worktree removal cancelled");
+    }
+
+    let status = Command::new("git")
+        .args(["worktree", "remove", "--force"])
+        .arg(path)
+        .status()
+        .context("Failed to run git worktree remove --force")?;
     if !status.success() {
         anyhow::bail!("git worktree remove failed");
     }
