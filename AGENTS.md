@@ -123,8 +123,8 @@ Extending the codebase
 Agent-specific commit rules (from user)
 
 - Commit only after build/lint/test succeed.
-- Commit subject must end with `[AI]`.
-- Commit message must include prompts used:
+- Commit subject must summarise changes and end with `[AI]`.
+- Commit message body must include prompts provided to the agent by the user:
   `Prompt: <text>` on the first line of each prompt.
 - Keep commits scoped and separate unrelated changes.
 - Commit after each change is complete.
