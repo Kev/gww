@@ -2,9 +2,17 @@
 name = "gww"
 version = "0.1.0"
 edition = "2024"
+description = "Wrapper tool for easier management of git worktrees"
+license = "BSD-2-Clause"
+repository = "https://github.com/Kev/gww"
+readme = "README.md"
+keywords = ["git", "cli", "developer-tools", "utility", "worktree"]
+categories = ["command-line-utilities"]
+exclude = ["AGENTS.md"]
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 console = "0.16"
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }
+
