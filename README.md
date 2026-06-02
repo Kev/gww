@@ -42,7 +42,16 @@ Worktrees are stored under `$WORKTREE_ROOT/<repo>/<branch>`.
 
 - `WORKTREE_ROOT` - Base directory for worktrees.
 - `GWW_NO_COLOUR` - Disable ANSI colors when set.
-- `GWW_SUBMODULE_ON_CHECKOUT` - Initialize submodules recursively when set.
+- `GWW_CHECKOUT_COMMANDS` - `;`-separated commands run inside each newly
+  checked-out worktree. Each command is split into a program and arguments with
+  shell-style quoting (but is executed directly, without a shell). For example,
+  `GWW_CHECKOUT_COMMANDS="git submodule update --init --recursive"` initializes
+  submodules, and `GWW_CHECKOUT_COMMANDS="jj git init --colocate"` sets up
+  [jj](https://github.com/jj-vcs/jj) in the worktree. Commands run in order and
+  a failure aborts the checkout.
+- `GWW_SUBMODULE_ON_CHECKOUT` - **Deprecated.** Initialize submodules
+  recursively when set. Use `GWW_CHECKOUT_COMMANDS` with
+  `git submodule update --init --recursive` instead.
 - `GWW_CACHE_FILE` - Override the cache file path (defaults to
   `$XDG_CACHE_HOME/gww/state.json`, or `$HOME/.cache/gww/state.json`). The
   cache is a JSON object recording the most recently switched-to worktree path

@@ -727,8 +727,12 @@ fn git_worktree_add(path: &Path, branch: Option<&str>, remote: Option<&str>) -> 
         anyhow::bail!("git worktree add failed");
     }
     if should_init_submodules_on_checkout() {
+        eprintln!(
+            "Warning: GWW_SUBMODULE_ON_CHECKOUT is deprecated; set GWW_CHECKOUT_COMMANDS=\"git submodule update --init --recursive\" instead."
+        );
         init_submodules(path)?;
     }
+    run_checkout_commands(path)?;
     Ok(())
 }
 
@@ -749,6 +753,44 @@ fn init_submodules(path: &Path) -> Result<()> {
         anyhow::bail!("git submodule update failed");
     }
     Ok(())
+}
+
+/// Runs the `;`-separated commands from `GWW_CHECKOUT_COMMANDS` in the new worktree.
+fn run_checkout_commands(path: &Path) -> Result<()> {
+    let Some(commands) = env::var_os("GWW_CHECKOUT_COMMANDS") else {
+        return Ok(());
+    };
+    let commands = commands.to_string_lossy();
+    for argv in parse_checkout_commands(&commands)? {
+        let (program, args) = argv.split_first().expect("argv is non-empty");
+        let status = Command::new(program)
+            .args(args)
+            .current_dir(path)
+            .status()
+            .with_context(|| format!("Failed to run checkout command: {program}"))?;
+        if !status.success() {
+            anyhow::bail!("Checkout command failed: {program}");
+        }
+    }
+    Ok(())
+}
+
+/// Splits a `;`-separated command string into a list of non-empty argv vectors,
+/// honoring shell-style quoting within each command (without invoking a shell).
+fn parse_checkout_commands(commands: &str) -> Result<Vec<Vec<String>>> {
+    let mut parsed = Vec::new();
+    for command in commands.split(';') {
+        let command = command.trim();
+        if command.is_empty() {
+            continue;
+        }
+        let argv = shlex::split(command)
+            .with_context(|| format!("Failed to parse checkout command: {command}"))?;
+        if !argv.is_empty() {
+            parsed.push(argv);
+        }
+    }
+    Ok(parsed)
 }
 
 /// Runs `git worktree remove` for the selected path.
@@ -1013,5 +1055,50 @@ mod tests {
             repo_name_from_url("ssh://git@github.com/org/repo/"),
             Some("repo".to_string())
         );
+    }
+
+    /// Splits commands and tokenizes their arguments.
+    #[test]
+    fn parse_checkout_commands_splits_and_tokenizes() {
+        let parsed = parse_checkout_commands(
+            "git submodule update --init --recursive; jj git init --colocate",
+        )
+        .expect("parse");
+
+        assert_eq!(
+            parsed,
+            vec![
+                vec!["git", "submodule", "update", "--init", "--recursive"],
+                vec!["jj", "git", "init", "--colocate"],
+            ]
+        );
+    }
+
+    /// Honors shell-style quoting so an argument may contain spaces.
+    #[test]
+    fn parse_checkout_commands_respects_quotes() {
+        let parsed = parse_checkout_commands(r#"foo --path "my dir""#).expect("parse");
+
+        assert_eq!(parsed, vec![vec!["foo", "--path", "my dir"]]);
+    }
+
+    /// Skips empty segments from leading, trailing, or doubled separators.
+    #[test]
+    fn parse_checkout_commands_skips_empty_segments() {
+        let parsed = parse_checkout_commands(";  ; echo hi ;; ").expect("parse");
+
+        assert_eq!(parsed, vec![vec!["echo", "hi"]]);
+    }
+
+    /// An empty variable yields no commands.
+    #[test]
+    fn parse_checkout_commands_empty_is_no_commands() {
+        assert!(parse_checkout_commands("").expect("parse").is_empty());
+    }
+
+    /// An unbalanced quote is a parse error rather than a silent split.
+    #[test]
+    fn parse_checkout_commands_rejects_unbalanced_quote() {
+        assert!(parse_checkout_commands(r#"foo "unterminated"#).is_err());
     }
 }
