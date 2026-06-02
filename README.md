@@ -20,7 +20,11 @@ This started as an experiment in vibe coding, but quickly became useful and repl
 - `gww checkout -b <branch>` - Create a branch if it does not exist.
 - `gww list|ls` - Show worktrees (raw `git worktree list` output).
 - `gww remove|rm [branch]` - Remove a worktree (fuzzy select when omitted).
+- `gww --last` - Switch to the worktree path gww most recently switched to (across any repository).
 - `gww autocd` - Emit a shell wrapper for auto-cd behavior.
+
+Running `gww` with no arguments outside a git repository prints a short notice
+and behaves like `gww --last`.
 
 Worktree root is set by `WORKTREE_ROOT`, defaulting to `$HOME/devel/worktrees`.
 Worktrees are stored under `$WORKTREE_ROOT/<repo>/<branch>`.
@@ -39,6 +43,10 @@ Worktrees are stored under `$WORKTREE_ROOT/<repo>/<branch>`.
 - `WORKTREE_ROOT` - Base directory for worktrees.
 - `GWW_NO_COLOUR` - Disable ANSI colors when set.
 - `GWW_SUBMODULE_ON_CHECKOUT` - Initialize submodules recursively when set.
+- `GWW_CACHE_FILE` - Override the cache file path (defaults to
+  `$XDG_CACHE_HOME/gww/state.json`, or `$HOME/.cache/gww/state.json`). The
+  cache is a JSON object recording the most recently switched-to worktree path
+  for `gww --last`.
 
 ## Auto-cd
 

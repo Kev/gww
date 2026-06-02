@@ -2,10 +2,12 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::{Confirm, FuzzySelect};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -15,6 +17,9 @@ const CD_PREFIX: &str = "GWW_CD:";
 #[derive(Parser)]
 #[command(name = "gww", about = "Git worktree wrapper", version)]
 struct Cli {
+    /// Switch to the most recently used worktree path
+    #[arg(long)]
+    last: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -84,13 +89,33 @@ enum BranchSource {
     Worktree,
 }
 
+/// Persisted state remembered between gww invocations.
+///
+/// Stored as a JSON object so new fields can be added without breaking
+/// older cache files; unknown fields are ignored on read.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Cache {
+    /// Path gww most recently switched to, across any repository.
+    #[serde(default)]
+    last_path: Option<String>,
+}
+
 /// Entry point for the gww CLI.
 fn main() -> Result<()> {
     configure_colors();
     let cli = Cli::parse();
+
+    if cli.last {
+        return go_to_last();
+    }
+
     let command = match cli.command {
         Some(command) => command,
         None => {
+            if !in_git_repo() {
+                eprintln!("Not in a git repository; switching to the most recently used worktree.");
+                return go_to_last();
+            }
             eprintln!(
                 "No command provided; defaulting to `checkout`. Use `gww --help` for options."
             );
@@ -222,6 +247,11 @@ fn autocd() -> Result<()> {
 fn ensure_git_repo() -> Result<()> {
     git_output(["rev-parse", "--show-toplevel"]).context("Not a git repository")?;
     Ok(())
+}
+
+/// Returns true when the current directory is inside a git repository.
+fn in_git_repo() -> bool {
+    git_output(["rev-parse", "--show-toplevel"]).is_ok()
 }
 
 /// Runs a git command and returns stdout on success.
@@ -775,7 +805,76 @@ fn git_worktree_remove(path: &Path, force: bool) -> Result<()> {
 
 /// Emits a tagged path for shell auto-cd scripts.
 fn emit_cd(path: &Path) {
+    record_last_path(path);
     println!("{CD_PREFIX}{}", path.display());
+}
+
+/// Switches to the most recently used worktree path from the cache.
+fn go_to_last() -> Result<()> {
+    let cache = read_cache()?;
+    let Some(last_path) = cache.last_path else {
+        anyhow::bail!("No previous worktree recorded yet; switch to one with gww first");
+    };
+    let path = PathBuf::from(&last_path);
+    if !path.is_dir() {
+        anyhow::bail!("Recorded path no longer exists: {last_path}");
+    }
+    emit_cd(&path);
+    Ok(())
+}
+
+/// Resolves the path to the gww state cache file.
+fn cache_file_path() -> Result<PathBuf> {
+    if let Ok(path) = env::var("GWW_CACHE_FILE") {
+        return Ok(PathBuf::from(path));
+    }
+    let dir = if let Ok(xdg) = env::var("XDG_CACHE_HOME") {
+        PathBuf::from(xdg)
+    } else {
+        let home = env::var("HOME").context("HOME not set")?;
+        PathBuf::from(home).join(".cache")
+    };
+    Ok(dir.join("gww").join("state.json"))
+}
+
+/// Reads the cache, returning defaults when it does not yet exist.
+fn read_cache() -> Result<Cache> {
+    let path = cache_file_path()?;
+    match fs::read_to_string(&path) {
+        Ok(contents) => serde_json::from_str(&contents)
+            .with_context(|| format!("Failed to parse cache file {}", path.display())),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Cache::default()),
+        Err(err) => {
+            Err(err).with_context(|| format!("Failed to read cache file {}", path.display()))
+        }
+    }
+}
+
+/// Writes the cache, creating the parent directory as needed.
+fn write_cache(cache: &Cache) -> Result<()> {
+    let path = cache_file_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let contents = serde_json::to_string_pretty(cache).context("Failed to serialize cache")?;
+    fs::write(&path, contents)
+        .with_context(|| format!("Failed to write cache file {}", path.display()))?;
+    Ok(())
+}
+
+/// Records the last switched-to path, warning but not failing on errors.
+fn record_last_path(path: &Path) {
+    if let Err(err) = update_last_path(path) {
+        eprintln!("Warning: failed to record last worktree path: {err:#}");
+    }
+}
+
+/// Updates the cached last path, preserving any other stored fields.
+fn update_last_path(path: &Path) -> Result<()> {
+    let mut cache = read_cache()?;
+    cache.last_path = Some(path.display().to_string());
+    write_cache(&cache)
 }
 
 #[cfg(test)]
@@ -871,6 +970,36 @@ mod tests {
         let found = worktree_for_branch(&worktrees, "feature").expect("missing worktree");
 
         assert_eq!(found.path, PathBuf::from("/tmp/two"));
+    }
+
+    /// Round-trips the cache through JSON serialization.
+    #[test]
+    fn cache_round_trips_through_json() {
+        let cache = Cache {
+            last_path: Some("/tmp/worktrees/repo/main".to_string()),
+        };
+
+        let json = serde_json::to_string(&cache).expect("serialize");
+        let parsed: Cache = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(parsed.last_path, cache.last_path);
+    }
+
+    /// Defaults to no recorded path when the field is absent.
+    #[test]
+    fn cache_defaults_when_field_missing() {
+        let parsed: Cache = serde_json::from_str("{}").expect("deserialize empty object");
+
+        assert_eq!(parsed.last_path, None);
+    }
+
+    /// Tolerates unknown fields so new keys can be added later.
+    #[test]
+    fn cache_ignores_unknown_fields() {
+        let parsed: Cache =
+            serde_json::from_str(r#"{"last_path":"/a","future_field":42}"#).expect("deserialize");
+
+        assert_eq!(parsed.last_path, Some("/a".to_string()));
     }
 
     /// Verifies repository names are extracted cleanly.

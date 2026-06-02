@@ -140,3 +140,6 @@ Notes
 - `WORKTREE_ROOT` controls where worktrees are stored.
 - `GWW_NO_COLOUR` disables ANSI colors.
 - Target worktree layout: `$WORKTREE_ROOT/<repo>/<branch>`.
+- `GWW_CACHE_FILE` overrides the cache file path (defaults under
+  `$XDG_CACHE_HOME`/`$HOME/.cache`); it is a JSON object holding the most
+  recently switched-to path for `gww --last`.
