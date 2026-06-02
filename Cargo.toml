@@ -1,6 +1,6 @@
 [package]
 name = "gww"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Wrapper tool for easier management of git worktrees"
 license = "BSD-2-Clause"
